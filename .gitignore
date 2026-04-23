@@ -78,3 +78,9 @@ Thumbs.db
 # 🚀 FastAPI / uvicorn
 # =========================
 *.pid
+
+# =========================
+# 📊 Data lake (NO versionar datos)
+# =========================
+fintech_pipeline/data/
+*.parquet
