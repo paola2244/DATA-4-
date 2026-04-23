@@ -1,0 +1,80 @@
+# =========================
+# 🐍 Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# =========================
+# 🔐 Variables de entorno (CRÍTICO)
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# 🧪 Testing / Coverage
+# =========================
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+
+# =========================
+# 📦 Dependencias
+# =========================
+pip-log.txt
+pip-delete-this-directory.txt
+
+# =========================
+# 🧑‍💻 IDEs
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# 🐳 Docker
+# =========================
+docker-compose.override.yml
+
+# =========================
+# ☁️ AWS / S3 / credenciales
+# =========================
+.aws/
+aws-credentials
+credentials
+*.pem
+
+# =========================
+# 🪵 Logs
+# =========================
+*.log
+logs/
+
+# =========================
+# 🧊 OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# 📊 Databricks / Spark (opcional)
+# =========================
+*.parquet.tmp
+.metastore/
+
+# =========================
+# 🚀 FastAPI / uvicorn
+# =========================
+*.pid

@@ -1,0 +1,26 @@
+# ── Pipeline de datos ──────────────────────────────────────────────────────────
+pandas>=2.0.0
+pyarrow>=14.0.0
+numpy>=1.26.0
+
+# ── Bus de eventos y API HTTP ──────────────────────────────────────────────────
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.0.0
+
+# ── Fuentes de datos y utilidades ─────────────────────────────────────────────
+requests>=2.31.0
+Faker>=19.0.0
+python-dotenv>=1.0.0
+
+# ── Consola Windows — encoding UTF-8 para emojis en prints ────────────────────
+# Ejecutar siempre con: python -X utf8 <script>.py
+# O agregar a PYTHONUTF8=1 en las variables de entorno del sistema
+
+# ── Fase 3 — Agente Inteligente ───────────────────────────────────────────────
+anthropic>=0.96.0
+duckdb>=1.5.0
+streamlit>=1.56.0
+strands-agents>=1.36.0
+matplotlib>=3.8.0
+databricks-sdk=>0.103.0

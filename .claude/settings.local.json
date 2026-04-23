@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import sys; print\\(sys.executable\\)\")",
+      "Bash(python -m pip list --format=columns)",
+      "Bash(python -c ' *)",
+      "Bash(python -m pip install requests faker python-dotenv fastapi \"uvicorn[standard]\" pydantic)",
+      "Bash(python src/bronze/pipeline_bronze.py)",
+      "Bash(set PYTHONIOENCODING=utf-8)",
+      "Bash(python -X utf8 src/bronze/pipeline_bronze.py)",
+      "Bash(python -X utf8 src/silver/pipeline_silver.py)",
+      "Bash(python -X utf8 src/gold/pipeline_gold.py)",
+      "Bash(python -X utf8 -c ' *)",
+      "Bash(python -X utf8 verificar_pipeline_completo.py)",
+      "Bash(python -X utf8 src/bus/start_full_pipeline.py --delay 0 --no-trigger)",
+      "Bash(python -m pip install strands-agents)",
+      "Bash(pip show *)",
+      "Bash(pip install *)"
+    ]
+  }
+}
