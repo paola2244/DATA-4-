@@ -301,6 +301,135 @@ def resumen_ejecutivo() -> str:
         return f"Error: {e}"
 
 
+@tool
+def consultar_databricks(sql: str) -> str:
+    """
+    Ejecuta una consulta SQL sobre el catálogo Databricks fintech.
+    Usa esta tool cuando el usuario pida datos del catálogo Databricks
+    o cuando quiera consultar la tabla gold_user_360 en Databricks.
+    Solo ejecuta SELECT, nunca INSERT, UPDATE, DELETE ni DROP.
+
+    Args:
+        sql: Consulta SQL a ejecutar sobre el catálogo Databricks
+    Returns:
+        Resultado de la consulta en formato texto
+    """
+    import time
+
+    # ── TRAZA 1: Tool invocada ───────────────────────────────────────────
+    ts_inicio = time.time()
+    print("\n" + "="*60)
+    print("🔷 DATABRICKS TOOL — INVOCADA")
+    print(f"   Timestamp : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"   SQL recibido:\n   {sql}")
+    print("="*60)
+
+    try:
+        from databricks import sql as dbsql
+
+        host      = os.getenv("DATABRICKS_HOST", "").replace("https://", "")
+        token     = os.getenv("DATABRICKS_TOKEN", "")
+        http_path = os.getenv("DATABRICKS_HTTP_PATH", "")
+        catalog   = os.getenv("DATABRICKS_CATALOG", "fintech_pipeline")
+        schema    = os.getenv("DATABRICKS_SCHEMA", "fintech")
+
+        # ── TRAZA 2: Credenciales ────────────────────────────────────────
+        print(f"🔑 Credenciales cargadas:")
+        print(f"   HOST      : {host[:40]}..." if len(host) > 40 else f"   HOST      : {host}")
+        print(f"   TOKEN     : {token[:8]}..." if token else "   TOKEN     : ⚠️ VACÍO")
+        print(f"   HTTP_PATH : {http_path}")
+        print(f"   CATALOG   : {catalog}")
+        print(f"   SCHEMA    : {schema}")
+
+        if not host or not token or not http_path:
+            msg = (
+                "⚠️ Faltan credenciales de Databricks en el archivo .env.\n"
+                "Configura: DATABRICKS_HOST, DATABRICKS_TOKEN, "
+                "DATABRICKS_HTTP_PATH"
+            )
+            print(f"❌ CREDENCIALES INCOMPLETAS — abortando")
+            print("="*60 + "\n")
+            return msg
+
+        # ── TRAZA 3: Validar SQL ─────────────────────────────────────────
+        sql_upper = sql.strip().upper()
+        if not sql_upper.startswith("SELECT"):
+            msg = (
+                "🔒 Solo se permiten consultas SELECT en Databricks. "
+                "No se permiten operaciones de escritura."
+            )
+            print(f"❌ SQL BLOQUEADO — no es SELECT")
+            print("="*60 + "\n")
+            return msg
+
+        # ── TRAZA 4: Conectando ──────────────────────────────────────────
+        print(f"\n⏳ Conectando a Databricks...")
+        t_conexion = time.time()
+
+        with dbsql.connect(
+            server_hostname=host,
+            http_path=http_path,
+            access_token=token,
+            catalog=catalog,
+            schema=schema,
+        ) as conn:
+            print(f"✅ Conexión establecida en {time.time() - t_conexion:.2f}s")
+
+            with conn.cursor() as cursor:
+                # ── TRAZA 5: Ejecutando query ────────────────────────────
+                print(f"\n⚡ Ejecutando query...")
+                t_query = time.time()
+                cursor.execute(sql)
+                resultado = cursor.fetchall()
+                columnas = [desc[0] for desc in cursor.description]
+                t_total_query = time.time() - t_query
+
+                # ── TRAZA 6: Resultado ───────────────────────────────────
+                print(f"✅ Query ejecutado en {t_total_query:.2f}s")
+                print(f"   Filas retornadas : {len(resultado)}")
+                print(f"   Columnas         : {', '.join(columnas)}")
+
+                if not resultado:
+                    print("⚠️  Sin resultados")
+                    print("="*60 + "\n")
+                    return "La consulta no retornó resultados."
+
+                lineas = [" | ".join(columnas)]
+                lineas.append("-" * len(lineas[0]))
+                for fila in resultado[:50]:
+                    lineas.append(" | ".join(str(v) for v in fila))
+
+                total = len(resultado)
+                resumen = "\n".join(lineas)
+                if total > 50:
+                    resumen += (
+                        f"\n\n⚠️ Resultado truncado a 50 filas "
+                        f"(total: {total:,} filas)."
+                    )
+
+                t_total = time.time() - ts_inicio
+                print(f"\n✅ DATABRICKS TOOL — COMPLETADA en {t_total:.2f}s total")
+                print("="*60 + "\n")
+                return resumen
+
+    except ImportError:
+        msg = (
+            "❌ El conector databricks-sql-connector no está instalado.\n"
+            "Corre: pip install databricks-sql-connector"
+        )
+        print(f"❌ ImportError: databricks-sql-connector no instalado")
+        print("="*60 + "\n")
+        return msg
+
+    except Exception as e:
+        t_total = time.time() - ts_inicio
+        msg = f"❌ Error al conectar con Databricks ({t_total:.2f}s): {str(e)}"
+        print(f"❌ EXCEPCIÓN: {str(e)}")
+        print(f"   Tiempo transcurrido: {t_total:.2f}s")
+        print("="*60 + "\n")
+        return msg
+
+
 # ── Agente ───────────────────────────────────────────────────────────────────
 def crear_agente() -> Agent:
     """Crea el agente usando Ollama via HTTP directo."""
@@ -336,7 +465,7 @@ def crear_agente() -> Agent:
                 return chat
             tools_desc = (
                 "\n\nTIENES ACCESO A ESTAS FUNCIONES. "
-                "Cuando el usuario pida un gráfico o análisis que "
+                "Cuando el usuario pida un análisis que "
                 "requiera una de estas funciones, responde ÚNICAMENTE "
                 "con este formato JSON sin texto adicional:\n"
                 "{\"tool\": \"nombre_tool\", \"args\": {\"param\": \"valor\"}}\n\n"
@@ -360,25 +489,68 @@ def crear_agente() -> Agent:
             resp.raise_for_status()
             return resp.json().get("message", {}).get("content", "")
 
-        def _maybe_invoke_tool(self, text):
+        def _maybe_invoke_tool(self, text, original_messages=None):
             stripped = text.strip()
-            if not (stripped.startswith("{") and "tool" in stripped):
+            import re
+            json_match = re.search(
+                r'\{[^{}]*"tool"[^{}]*\}', stripped, re.DOTALL
+            )
+            if not json_match:
                 return text
             try:
-                call = _json.loads(stripped)
-                fn = self._tools_registry.get(call.get("tool", ""))
-                if fn:
-                    resultado = fn(**call.get("args", {}))
-                    return f"✅ Gráfico generado correctamente.\n\n{resultado}"
-            except Exception:
-                pass
-            return text
+                call = json.loads(json_match.group(0))
+                tool_name = call.get("tool", "")
+                args = call.get("args", {})
+
+                print(f"\n🔧 TOOL DETECTADA: {tool_name}")
+                print(f"   Args recibidos: {args}")
+
+                fn = self._tools_registry.get(tool_name)
+                if not fn:
+                    print(f"   ❌ Tool '{tool_name}' no encontrada")
+                    return text
+
+                import inspect
+                params = list(inspect.signature(fn).parameters.keys())
+                print(f"   Parámetros esperados: {params}")
+                if len(params) == 1 and params[0] not in args:
+                    primer_valor = list(args.values())[0] if args else ""
+                    args = {params[0]: primer_valor}
+                    print(f"   Args normalizados: {args}")
+
+                print(f"   ⚡ Ejecutando {tool_name}({args})...")
+                resultado = fn(**args)
+                print(f"   ✅ Tool ejecutada. Resultado preview: {str(resultado)[:150]}...")
+
+                print(f"   🗣️ Generando respuesta en lenguaje natural...")
+                prompt_natural = (
+                    f"Eres un analista senior de datos fintech. "
+                    f"Basándote en estos datos obtenidos:\n\n"
+                    f"{resultado}\n\n"
+                    f"Responde en español de forma profesional usando "
+                    f"esta estructura:\n"
+                    f"📊 RESUMEN: respuesta directa y concisa\n"
+                    f"🔍 ANÁLISIS: qué muestran los datos con números\n"
+                    f"💡 INSIGHT CLAVE: qué significa para el negocio\n"
+                    f"🎯 RECOMENDACIÓN: acción concreta a tomar\n\n"
+                    f"NO menciones nombres de tablas, bases de datos "
+                    f"ni detalles técnicos internos."
+                )
+                respuesta_natural = self._call_chat([
+                    {"role": "system", "content": prompt_natural},
+                    {"role": "user", "content": "Genera el análisis."}
+                ])
+                return respuesta_natural
+
+            except Exception as e:
+                print(f"   ❌ Error: {e}")
+                return text
 
         async def stream(self, messages, tool_specs=None, system_prompt=None, **kwargs):
             chat = self._build_chat(messages, system_prompt)
             chat = self._inject_tools(chat)
             text = self._call_chat(chat)
-            text = self._maybe_invoke_tool(text)
+            text = self._maybe_invoke_tool(text, original_messages=chat)
             yield {"messageStart": {"role": "assistant"}}
             yield {"contentBlockStart": {"contentBlockIndex": 0, "start": {"text": ""}}}
             yield {"contentBlockDelta": {"contentBlockIndex": 0, "delta": {"text": text}}}
@@ -390,16 +562,11 @@ def crear_agente() -> Agent:
             return self.config
 
     _tools_list = [
-        listar_tablas,
         consultar_sql,
-        grafico_barras,
-        grafico_distribucion,
-        grafico_segmentos,
-        grafico_funnel_eventos,
-        grafico_tendencia_diaria,
         perfil_usuario_360,
         sugerir_campanas,
         resumen_ejecutivo,
+        consultar_databricks,
     ]
 
     model = OllamaDirectModel(model_id="llama3.2")
@@ -422,6 +589,122 @@ def agent_query(pregunta: str) -> str:
     global _agent
     if _agent is None:
         _agent = crear_agente()
+
+    import os
+
+    tiene_databricks = all([
+        os.getenv("DATABRICKS_HOST"),
+        os.getenv("DATABRICKS_TOKEN"),
+        os.getenv("DATABRICKS_HTTP_PATH")
+    ])
+
+    palabras_datos = [
+        "cuántos", "cuantos", "cuál", "cual", "cuáles", "cuales",
+        "dame", "muéstrame", "muestrame", "dime", "lista",
+        "total", "promedio", "segmento", "ciudad", "usuario",
+        "transaccion", "transacción", "gasto", "volumen",
+        "merchant", "canal", "fallo", "activo", "inactivo",
+        "rentable", "campaña", "campaña", "resumen", "análisis",
+        "analisis", "top", "mayor", "menor", "más", "menos"
+    ]
+
+    es_consulta_datos = any(
+        p in pregunta.lower() for p in palabras_datos
+    )
+
+    if tiene_databricks and es_consulta_datos:
+        print(f"\n🎯 Redirigiendo automáticamente a Databricks...")
+
+        pregunta_lower = pregunta.lower()
+
+        if any(p in pregunta_lower for p in ["cuántos usuarios", "cuantos usuarios", "total usuarios"]):
+            sql = "SELECT COUNT(*) as total_usuarios FROM gold_user_360"
+
+        elif any(p in pregunta_lower for p in ["por segmento", "segmentos", "cada segmento"]):
+            sql = """SELECT user_segment,
+                        COUNT(*) as usuarios,
+                        ROUND(AVG(total_amount_cop),0) as ticket_promedio,
+                        ROUND(AVG(failure_rate)*100,1) as tasa_fallo_pct
+                     FROM gold_user_360
+                     GROUP BY user_segment
+                     ORDER BY usuarios DESC"""
+
+        elif any(p in pregunta_lower for p in ["por ciudad", "ciudades", "cada ciudad"]):
+            sql = """SELECT city,
+                        COUNT(*) as usuarios,
+                        ROUND(SUM(total_amount_cop)/1000000,2) as volumen_M_cop
+                     FROM gold_user_360
+                     GROUP BY city
+                     ORDER BY volumen_M_cop DESC"""
+
+        elif any(p in pregunta_lower for p in ["merchant", "comercio", "tienda"]):
+            sql = """SELECT top_merchant, COUNT(*) as usuarios
+                     FROM gold_user_360
+                     WHERE top_merchant IS NOT NULL
+                     GROUP BY top_merchant
+                     ORDER BY usuarios DESC
+                     LIMIT 10"""
+
+        elif any(p in pregunta_lower for p in ["inactivo", "dormido", "sin transac"]):
+            sql = """SELECT user_segment, COUNT(*) as usuarios_inactivos
+                     FROM gold_user_360
+                     WHERE days_since_last_tx > 30
+                     GROUP BY user_segment
+                     ORDER BY usuarios_inactivos DESC"""
+
+        elif any(p in pregunta_lower for p in ["fallo", "fallido", "error de pago"]):
+            sql = """SELECT user_segment,
+                        ROUND(AVG(failure_rate)*100,1) as tasa_fallo_pct,
+                        SUM(failed_transactions) as total_fallos
+                     FROM gold_user_360
+                     GROUP BY user_segment
+                     ORDER BY tasa_fallo_pct DESC"""
+
+        elif any(p in pregunta_lower for p in ["rentable", "mayor gasto", "top usuario"]):
+            sql = """SELECT user_segment,
+                        ROUND(AVG(avg_ticket),0) as ticket_promedio,
+                        ROUND(SUM(total_amount_cop)/1000000,2) as volumen_M_cop
+                     FROM gold_user_360
+                     GROUP BY user_segment
+                     ORDER BY volumen_M_cop DESC"""
+
+        elif any(p in pregunta_lower for p in ["canal", "app", "web"]):
+            sql = """SELECT preferred_channel, COUNT(*) as usuarios
+                     FROM gold_user_360
+                     GROUP BY preferred_channel
+                     ORDER BY usuarios DESC"""
+
+        else:
+            sql = """SELECT user_segment,
+                        COUNT(*) as usuarios,
+                        ROUND(SUM(total_amount_cop)/1000000,2) as volumen_M_cop,
+                        ROUND(AVG(avg_ticket),0) as ticket_promedio
+                     FROM gold_user_360
+                     GROUP BY user_segment"""
+
+        datos = consultar_databricks(sql)
+
+        modelo = _agent.model
+        prompt_natural = (
+            f"Eres un analista senior de datos fintech colombiano. "
+            f"El usuario preguntó: '{pregunta}'\n\n"
+            f"Los datos obtenidos son:\n{datos}\n\n"
+            f"Responde en español de forma profesional con esta estructura:\n"
+            f"📊 RESUMEN: respuesta directa a la pregunta\n"
+            f"🔍 ANÁLISIS: interpretación de los números\n"
+            f"💡 INSIGHT CLAVE: qué significa para el negocio\n"
+            f"🎯 RECOMENDACIÓN: acción concreta a tomar\n\n"
+            f"No menciones nombres de tablas ni detalles técnicos."
+        )
+        try:
+            respuesta = modelo._call_chat([
+                {"role": "system", "content": prompt_natural},
+                {"role": "user", "content": "Genera el análisis profesional."}
+            ])
+            return respuesta
+        except Exception as e:
+            return f"Datos de Databricks:\n{datos}"
+
     respuesta = _agent(pregunta)
     if hasattr(respuesta, "message"):
         return respuesta.message.get("content", [{}])[0].get("text", str(respuesta))
